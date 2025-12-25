@@ -7,29 +7,47 @@ import (
 	"strings"
 )
 
+func getLinesChannel(f io.ReadCloser) <-chan string {
+	ch := make(chan string)
+	s := ""
+	temp := ""
+	go func() {
+		defer f.Close()
+		for {
+			s += temp
+			temp = ""
+			b := make([]byte, 8)
+			n, err := f.Read(b)
+			str := string(b[:n])
+			parts := strings.Split(str, "\n")
+
+			s += parts[0]
+			if len(parts) == 2 {
+				temp += parts[1]
+				ch <- s
+				s = ""
+			} 
+			
+			if err == io.EOF {
+				close(ch)
+				break
+			} else if err != nil {
+				os.Exit(1)
+			}
+		}
+	}()
+	return ch
+}
+
 func main() {
-	file, err := os.Open("./messages.txt")
+	f, err := os.Open("./messages.txt")
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
-	b := make([]byte, 0)
-	fmt.Print("read: ")
-	defer file.Close()
-	for {
-		c := make([]byte, 8)
-		n, err := file.Read(c)
-		b = append(b, c[:n]...)
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			os.Exit(1)
-		}
-	}
-	s := string(b)
-	s = strings.Replace(s, "\n", "\nread: ", -1)
-	s = strings.TrimSuffix(s, "\nread: ")
-    s = strings.TrimSuffix(s, "\n")
+	ch := getLinesChannel(f)
 
-	fmt.Println(s)
+	for line := range(ch) {
+		fmt.Println("read: " +line)
+	}
 }
