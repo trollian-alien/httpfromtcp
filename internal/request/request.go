@@ -5,10 +5,12 @@ import (
 	"io"
 	"strings"
 	"unicode"
+	"github.com/trollian-alien/httpfromtcp/internal/headers"
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers headers.Headers
 	state requestState
 }
 
@@ -18,20 +20,28 @@ type RequestLine struct {
 	Method        string
 }
 
+//Me: Go, I want enums 
+//Go: we already gave enums at home
+//Enums at home:
 type requestState int
 
 const (
 	requestStateInitialized requestState = iota
+	requestStateParsingHeaders
 	requestStateDone
 )
 
 const readSize = 8
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	request := &Request{state: requestStateInitialized}
+	request := &Request{
+		Headers: headers.NewHeaders(),
+		state: requestStateInitialized,
+	}
 	readToIndex := 0
 	b := make([]byte, readSize)
 	for request.state != requestStateDone {
+
 		if readToIndex >= len(b) {
 		newB := make([]byte, len(b) *2)
 		copy(newB, b)
@@ -39,7 +49,18 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		}
 		numBytesRead, err := reader.Read(b[readToIndex:])
 		if err == io.EOF {
-			request.state = requestStateDone
+			// final parse for the remianing bytes, if there are any
+			if readToIndex > 0 {
+            _, perr := request.parse(b[:readToIndex])
+				if perr != nil {
+					return nil, perr
+				}
+        	}
+
+			// incomplete request
+			if request.state != requestStateDone {
+					return nil, fmt.Errorf("incomplete request, in state: %d, read n bytes on EOF: %d", request.state, numBytesRead)
+			}
 			break
 		} else if err != nil {
 			return nil, fmt.Errorf("error reading: %v", err)
@@ -49,6 +70,10 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		if err != nil {
 			return nil, err
 		}
+		if numBytesParsed > readToIndex {
+    		return nil, fmt.Errorf("parser bug: parsed %d bytes from buffer of size %d", numBytesParsed, readToIndex)
+		}
+
 		copy(b, b[numBytesParsed:])
 		readToIndex -= numBytesParsed
 	}
@@ -69,7 +94,16 @@ func (r *Request) parse(data []byte) (int, error) {
 			return 0, nil
 		}
 		r.RequestLine = *requestLine
-		r.state = requestStateDone
+		r.state = requestStateParsingHeaders
+		return n, nil
+	case requestStateParsingHeaders:
+		n, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if done {
+			r.state = requestStateDone
+		}
 		return n, nil
 	case requestStateDone:
 		return 0, fmt.Errorf("error: trying to read data in a done state")
@@ -80,7 +114,7 @@ func (r *Request) parse(data []byte) (int, error) {
 
 func parseRequestLine(bytes []byte) (*RequestLine, int, error) {
 	requestLine := string(bytes) // we get rid of the extra stuff now
-	index := strings.Index(requestLine, "\r")
+	index := strings.Index(requestLine, "\r\n")
 	if index == -1 {
 		// no CRLF, need more data
 		return nil, 0, nil
