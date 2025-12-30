@@ -3,14 +3,17 @@ package request
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"unicode"
+
 	"github.com/trollian-alien/httpfromtcp/internal/headers"
 )
 
 type Request struct {
 	RequestLine RequestLine
 	Headers headers.Headers
+	Body []byte
 	state requestState
 }
 
@@ -28,6 +31,7 @@ type requestState int
 const (
 	requestStateInitialized requestState = iota
 	requestStateParsingHeaders
+	requestStateParsingBody
 	requestStateDone
 )
 
@@ -102,9 +106,25 @@ func (r *Request) parse(data []byte) (int, error) {
 			return 0, err
 		}
 		if done {
-			r.state = requestStateDone
+			r.state = requestStateParsingBody
+			if r.Headers.Get("Content-Length") == "" || r.Headers.Get("Content-Length") == "0" {
+				r.state = requestStateDone //we're assuming that no or zero content length means no body
+			}
 		}
 		return n, nil
+	case requestStateParsingBody:
+		lengthString := r.Headers.Get("Content-Length")
+		length, err := strconv.Atoi(lengthString) // converted to int
+		if err != nil {
+			return 0, fmt.Errorf("Content-Length header value is an invalid integer: %v", lengthString)
+		}
+		r.Body = append(r.Body, data...)
+		if len(r.Body) > int(length) {
+			return 0, fmt.Errorf("too much data (at least %v) compared to Content-Length %v", len(r.Body), length)
+		} else if len(r.Body) == int(length) {
+			r.state = requestStateDone
+		}
+		return len(data), nil
 	case requestStateDone:
 		return 0, fmt.Errorf("error: trying to read data in a done state")
 	default:

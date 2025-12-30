@@ -11,6 +11,10 @@ func NewHeaders() Headers {
 	return make(Headers)
 }
 
+func (h Headers) Get(key string) string {
+	return h[strings.ToLower(key)]
+}
+
 func isTokenChar(r rune) bool {
     if r >= 'a' && r <= 'z' { return true }
     if r >= '0' && r <= '9' { return true }
