@@ -11,8 +11,21 @@ func NewHeaders() Headers {
 	return make(Headers)
 }
 
+//get value of he
 func (h Headers) Get(key string) string {
 	return h[strings.ToLower(key)]
+}
+
+func (h Headers) Set(key, value string) {
+	key = strings.ToLower(key)
+	v, ok := h[key]
+	if ok {
+		value = strings.Join([]string{
+			v,
+			value,
+		}, ", ")
+	}
+	h[key] = value
 }
 
 func isTokenChar(r rune) bool {
@@ -52,12 +65,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	value = strings.TrimSpace(value) 
 
 	//adding the value to the key map
-	oldVal, ok := h[key]
-	if !ok {
-		h[key] = strings.TrimSpace(value)
-	} else {
-		h[key] = oldVal + ", " + value
-	}
+	h.Set(key, value)
 
 	return index + 2, false, nil
 }
