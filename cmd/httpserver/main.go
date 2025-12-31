@@ -1,21 +1,42 @@
 package main
 
 import (
+	"io"
 	"log"
-	"os/signal"
 	"os"
+	"os/signal"
 	"syscall"
+
+	"github.com/trollian-alien/httpfromtcp/internal/request"
+	"github.com/trollian-alien/httpfromtcp/internal/response"
 	"github.com/trollian-alien/httpfromtcp/internal/server"
 )
 
 const port = 42069
 
+func handler(w io.Writer, req *request.Request) *server.HandlerError {
+	if req.RequestLine.RequestTarget == "/yourproblem" {
+		return &server.HandlerError{
+			StatusCode: response.StatusCodeBadRequest,
+			Message:    "Your problem is not my problem\n",
+		}
+	}
+	if req.RequestLine.RequestTarget == "/myproblem" {
+		return &server.HandlerError{
+			StatusCode: response.StatusCodeInternalServerError,
+			Message:    "Woopsie, my bad\n",
+		}
+	}
+	w.Write([]byte("All good, frfr\n"))
+	return nil
+}
+
 func main() {
-	server, err := server.Serve(port)
+	srv, err := server.Serve(port, handler)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}
-	defer server.Close()
+	defer srv.Close()
 	log.Println("Server started on port", port)
 
 	sigChan := make(chan os.Signal, 1)
