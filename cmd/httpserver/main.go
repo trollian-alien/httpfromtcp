@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/trollian-alien/httpfromtcp/internal/headers"
 	"github.com/trollian-alien/httpfromtcp/internal/request"
 	"github.com/trollian-alien/httpfromtcp/internal/response"
 	"github.com/trollian-alien/httpfromtcp/internal/server"
@@ -105,7 +107,7 @@ func proxyHandler(w *response.Writer, req *request.Request) {
 	h.Override("Transfer-Encoding", "chunked")
 	h.Remove("Content-Length")
 	w.WriteHeaders(h)
-
+	fullBody := make([]byte, 0)
 	const maxChunkSize = 1024
 	buffer := make([]byte, maxChunkSize)
 	for {
@@ -117,6 +119,7 @@ func proxyHandler(w *response.Writer, req *request.Request) {
 				fmt.Println("Error writing chunked body:", err)
 				break
 			}
+			fullBody = append(fullBody, buffer[:n]...)
 		}
 		if err == io.EOF {
 			break
@@ -130,6 +133,15 @@ func proxyHandler(w *response.Writer, req *request.Request) {
 	if err != nil {
 		fmt.Println("Error writing chunked body done:", err)
 	}
+	trailers := headers.NewHeaders()
+	sha256 := fmt.Sprintf("%x", sha256.Sum256(fullBody))
+	trailers.Override("X-Content-SHA256", sha256)
+	trailers.Override("X-Content-Length", fmt.Sprintf("%d", len(fullBody)))
+	err = w.WriteTrailers(trailers)
+	if err != nil {
+		fmt.Println("Error writing trailers:", err)
+	}
+	fmt.Println("Wrote trailers")
 }
 
 
@@ -146,3 +158,4 @@ func main() {
 	<-sigChan
 	log.Println("Server gracefully stopped")
 }
+
