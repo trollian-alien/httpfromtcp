@@ -70,7 +70,13 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	return index + 2, false, nil
 }
 
+//helpers for replacing/removing map keys
 func (h Headers) Override(key, value string) {
 	key = strings.ToLower(key)
 	h[key] = value
+}
+
+func (h Headers) Remove(key string) {
+	key = strings.ToLower(key)
+	delete(h, key)
 }
